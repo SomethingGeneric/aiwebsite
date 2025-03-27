@@ -2,6 +2,7 @@ from flask import Flask, request, Response, render_template
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from random import choice
 import os
 
 # Load environment variables from .env file
@@ -12,6 +13,47 @@ app = Flask(__name__)
 API_URL = os.getenv("OLLAMA")
 if API_URL is None:
     raise ValueError("API_URL environment variable not set.")
+
+PEXELS_KEY = os.getenv("PEXELS")
+if PEXELS_KEY is None:
+    raise ValueError("PEXELS_KEY environment variable not set.")
+
+if not os.path.exists("static"):
+    os.makedirs("static")
+
+# TODO:
+# 1. Use LLM to make a better query? (sometimes the filename isn't actually descriptive)
+# 2. Ensure that the image is downloaded, and then modify the LLM generated HTML
+#    to actually source the image correctly through flask
+
+def image_get(query):
+    try:
+        results = requests.get(f"https://api.pexels.com/v1/search?query={query}", headers={"Authorization": PEXELS_KEY})
+        photos = results.json()["photos"]
+        ranp = choice(photos)
+        link = ranp['src']['original']
+
+        # Download the image
+        image_response = requests.get(link)
+        if image_response.status_code == 200:
+            # Extract the file extension from the URL
+            file_extension = link.split('.')[-1]
+            filename = f"{query.replace(' ', '_')}.{file_extension}"
+            filepath = os.path.join("static", filename)
+
+            # Save the image to the /static directory
+            with open(filepath, "wb") as f:
+                f.write(image_response.content)
+
+            return f"/static/{filename}"
+        else:
+            print(f"Error downloading image: {image_response.status_code}")
+            return "NA"
+
+    except Exception as e:
+        print(f"Error fetching image with query '{query}': {e}")
+        return "NA"
+
 
 def aiget(prompt):
     payload = {"model": "gemma3:4b", "stream": False, "prompt": prompt}
@@ -35,6 +77,14 @@ def index():
 @app.route("/<path:subpath>")
 def proxy(subpath):
     # TODO: make seperate calls for CSS or JS or images
+
+    for extension in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+        if subpath.endswith(extension):
+            res = image_get(subpath.replace(extension, "").replace("_", " "))
+            if res != "NA":
+                return res, 200
+            else:
+                return "issue or not found", 404
 
     desc = ""
     if "/" in subpath:
