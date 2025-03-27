@@ -1,0 +1,13 @@
+<html>
+<head><title>Goober Search</title></head>
+<body>
+    <script>
+        function go() {
+            const old_href = window.location.href;
+            window.location.href = old_href + "/" + document.getElementById("query").value;
+        }
+    </script>
+    <input id="query">
+    <button type="button" onclick="go();">Search</button>
+</body>
+</html>
