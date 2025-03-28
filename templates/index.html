@@ -1,6 +1,9 @@
 <html>
 <head><title>Goober Search</title></head>
 <body>
+    <h1>Goober Search</h1>
+    <hr/>
+    <h2>Search</h2>
     <script>
         function go() {
             const old_href = window.location.href;
@@ -8,6 +11,9 @@
         }
     </script>
     <input id="query">
-    <button type="button" onclick="go();">Search</button>
+    <button type="button" onclick="go();">Go</button>
+    <hr/>
+    <h2>Suggested Links</h2>
+    {{ links|safe }}
 </body>
 </html>

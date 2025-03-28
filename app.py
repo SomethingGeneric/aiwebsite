@@ -26,9 +26,17 @@ if not os.path.exists("static"):
 # 2. Ensure that the image is downloaded, and then modify the LLM generated HTML
 #    to actually source the image correctly through flask
 
+def aiget(prompt):
+    payload = {"model": "gemma3:4b", "stream": False, "prompt": prompt}
+
+    response = requests.post(API_URL, json=payload)
+
+    return response
+
 def image_get(query):
     try:
-        results = requests.get(f"https://api.pexels.com/v1/search?query={query}", headers={"Authorization": PEXELS_KEY})
+        aiq = aiget("Please return a good description to search for an image of " + query).json()['response']
+        results = requests.get(f"https://api.pexels.com/v1/search?query={aiq}", headers={"Authorization": PEXELS_KEY})
         photos = results.json()["photos"]
         ranp = choice(photos)
         link = ranp['src']['original']
@@ -54,15 +62,6 @@ def image_get(query):
         print(f"Error fetching image with query '{query}': {e}")
         return "NA"
 
-
-def aiget(prompt):
-    payload = {"model": "gemma3:4b", "stream": False, "prompt": prompt}
-
-    response = requests.post(API_URL, json=payload)
-
-    return response
-
-
 def mkpage(desc):
     return aiget(
         f"generate ONLY HTML of a webpage page that's named {desc}. Do NOT include markdown formatting around the HTML, and do NOT use lorem ipsum text, make up believable text instead."
@@ -71,20 +70,20 @@ def mkpage(desc):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    aiq = aiget("Please return ONLY a CSV string of sample search queries that a user might find useful. DO NOT reply with anything else.").json()['response'].replace("```csv","").replace("```" ,"").split(",")
+    html = "<ul>"
+    bois = aiq
+    for l in bois:
+        o = l.replace("\"", "")
+        html += f"<li><a href='/{o}'>{o}</a></li>"
+    html += "</ul>"
+    
+    return render_template("index.html", links=html)
 
 
 @app.route("/<path:subpath>")
 def proxy(subpath):
-    # TODO: make seperate calls for CSS or JS or images
-
-    for extension in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-        if subpath.endswith(extension):
-            res = image_get(subpath.replace(extension, "").replace("_", " "))
-            if res != "NA":
-                return res, 200
-            else:
-                return "issue or not found", 404
+    # TODO: how to handle css and js?
 
     desc = ""
     if "/" in subpath:
@@ -116,6 +115,8 @@ def proxy(subpath):
         for a_tag in soup.find_all("a", href=False):
             old_href = a_tag.string
             a_tag["href"] = f"/{subpath}"
+
+        # TODO: find all places where there *should* be images, download them, and update the src 
 
         stuff = str(soup)
 
