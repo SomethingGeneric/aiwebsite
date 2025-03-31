@@ -22,9 +22,9 @@ if not os.path.exists("static"):
     os.makedirs("static")
 
 # TODO:
-# 1. Use LLM to make a better query? (sometimes the filename isn't actually descriptive)
 # 2. Ensure that the image is downloaded, and then modify the LLM generated HTML
 #    to actually source the image correctly through flask
+
 
 def aiget(prompt):
     payload = {"model": "gemma3:4b", "stream": False, "prompt": prompt}
@@ -33,34 +33,26 @@ def aiget(prompt):
 
     return response
 
+
 def image_get(query):
     try:
-        aiq = aiget("Please return a good description to search for an image of " + query).json()['response']
-        results = requests.get(f"https://api.pexels.com/v1/search?query={aiq}", headers={"Authorization": PEXELS_KEY})
+        print(f"Trying to get image for: '{query}'")
+        aiq = aiget(
+            "Please return a good description to search for an image of " + query
+        ).json()["response"]
+        # print(f"Ollama tells us to search: '{aiq}'")
+        results = requests.get(
+            f"https://api.pexels.com/v1/search?query={aiq}",
+            headers={"Authorization": PEXELS_KEY},
+        )
         photos = results.json()["photos"]
         ranp = choice(photos)
-        link = ranp['src']['original']
-
-        # Download the image
-        image_response = requests.get(link)
-        if image_response.status_code == 200:
-            # Extract the file extension from the URL
-            file_extension = link.split('.')[-1]
-            filename = f"{query.replace(' ', '_')}.{file_extension}"
-            filepath = os.path.join("static", filename)
-
-            # Save the image to the /static directory
-            with open(filepath, "wb") as f:
-                f.write(image_response.content)
-
-            return f"/static/{filename}"
-        else:
-            print(f"Error downloading image: {image_response.status_code}")
-            return "NA"
-
+        link = ranp["src"]["original"]
+        return link
     except Exception as e:
         print(f"Error fetching image with query '{query}': {e}")
-        return "NA"
+        return ""
+
 
 def mkpage(desc):
     return aiget(
@@ -70,14 +62,22 @@ def mkpage(desc):
 
 @app.route("/")
 def index():
-    aiq = aiget("Please return ONLY a CSV string of sample search queries that a user might find useful. DO NOT reply with anything else.").json()['response'].replace("```csv","").replace("```" ,"").split(",")
+    aiq = (
+        aiget(
+            "Please return ONLY a CSV string of sample search queries that a user might find useful. DO NOT reply with anything else."
+        )
+        .json()["response"]
+        .replace("```csv", "")
+        .replace("```", "")
+        .split(",")
+    )
     html = "<ul>"
     bois = aiq
     for l in bois:
-        o = l.replace("\"", "")
+        o = l.replace('"', "")
         html += f"<li><a href='/{o}'>{o}</a></li>"
     html += "</ul>"
-    
+
     return render_template("index.html", links=html)
 
 
@@ -116,9 +116,27 @@ def proxy(subpath):
             old_href = a_tag.string
             a_tag["href"] = f"/{subpath}"
 
-        # TODO: find all places where there *should* be images, download them, and update the src 
+        for img_tag in soup.find_all("img"):
+            wanted = img_tag["src"]
+            pexels = image_get(wanted)
+            img_tag["src"] = pexels
+            img_tag["height"] = "50%"
+
+        for script_tag in soup.find_all("script"):
+            if script_tag["src"]:
+                print("Want a script for " + script_tag["src"])
+
+        c = ""
+        for link_tag in soup.find_all("link"):
+            if link_tag["rel"] == "stylesheet":
+                print("Page is (supposed) to have a stylesheet!")
+                css = aiget(
+                    f"Please return ONLY sample CSS for a sample HTML page with this topic: {desc}"
+                )
+                c = "<style>" + css + "</style>"
 
         stuff = str(soup)
+        stuff.replace("</head>", c + "</head>")
 
         return Response(stuff, content_type="text/html")
     else:
